@@ -1,0 +1,108 @@
+name: Ti 🚀
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+env:
+  PY_COLORS: "1"
+
+jobs:
+  build:
+    name: Test on ${{ matrix.os }} with Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.13"]
+    
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: 🌐 Install Cloudflare WARP
+        run: |
+          echo "Setting up Cloudflare WARP..."
+          sudo apt-get -y update
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends cloudflare-warp
+          sudo warp-cli --accept-tos registration new
+          sudo warp-cli --accept-tos mode warp+doh
+          sudo warp-cli --accept-tos connect
+          sleep 5
+        shell: bash
+      
+      - name: ✅ Verify WARP connection
+        run: |
+          echo "Checking WARP connection..."
+          curl -s https://www.cloudflare.com/cdn-cgi/trace | grep "warp=on"
+        shell: bash
+      
+      - name: 🔥 Install Brave Browser
+        run: |
+          echo "Installing Brave Browser..."
+          sudo apt-get install -y curl
+          curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+          sudo apt-get update
+          sudo apt-get install -y brave-browser
+          brave-browser --version
+        shell: bash
+      
+      - name: 🗓️ Set Locale
+        run: |
+          sudo apt-get install tzdata locales -y && sudo locale-gen en_US.UTF-8
+          sudo localectl set-locale LANG="en_US.UTF-8"
+          export LANG="en_US.UTF-8"
+          sudo update-locale
+          locale -a
+          locale
+          locale -c -k LC_NUMERIC
+          localectl status
+      
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install --upgrade seleniumbase pyautogui pymongo python-xlib
+      
+      - name: 🚗 Install chromedriver
+        run: |
+          seleniumbase install chromedriver
+      
+      - name: 🧪 Install geckodriver (Firefox)
+        run: |
+          seleniumbase install geckodriver
+      
+      - name: 🎬 Run regu.py with Brave
+        run: |
+          python regu.py --brave --incognito --do-not-track --xvfb --screenshot
+        continue-on-error: true
+      
+      - name: 📸 Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seleniumbase-screenshots-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ./latest_logs/
+          retention-days: 30
+          if-no-files-found: warn
+      
+      - name: 📋 Job Summary
+        if: always()
+        run: |
+          echo "## 🎉 Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **OS**: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python**: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
